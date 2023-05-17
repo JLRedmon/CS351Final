@@ -1,322 +1,356 @@
-from tkinter import *
 import re
+from tkinter import *
+from tkinter import ttk
+from tkinter import messagebox
+import tkinter
+import graphviz
+import distutils.spawn
 
-root = Tk()
-num = 0
+tree = None
 
-parserTok = []
-inToken = ("empty", "empty")
+class Lexer:
+    def __init__(self):
+        pass
 
+    def matchKeywords(self, line):
+        return re.search(r'^\s*(if|else|int|float)', line)
+    
+    def matchOperators(self, line):
+        return re.search(r'^\s*(=|\+|>|<|\*)', line)
 
-# parse
+    def matchSeparators(self, line):
+        return re.search(r'^\s*(\(|\)|:|"|;)', line)
 
+    def matchIdentifiers(self, line):
+        return re.search(r'^\s*([a-zA-Z_]+\w*)', line)
 
-def print_exp():
-    global inToken
-    typeT, token = inToken
-    if (inToken[1] == ";"):
-        parse.insert(END, "child node (token):" + inToken[1] + "\n")
-        parse.insert(END, " accept token form the list:" + inToken[1] + "\n")
-        return
-    if (token == "print"):
-        parse.insert(END, "\nchild node (internal): keyword")
-        parse.insert(END, " keyword has child node (token):" + inToken[1] + "\n")
-        accept_token()
-    if (inToken[0] == "sep"):
-        parse.insert(END, "child node (internal): separator")
-        parse.insert(END, " separator has child node (token):" + inToken[1] + "\n")
-        accept_token()
-        print_exp()
-    if (inToken[0] == 'id'):
-        parse.insert(END, "child node (internal): identifier")
-        parse.insert(END, " identifier has child node (token):" + inToken[1] + "\n")
-        accept_token()
-        print_exp()
+    def matchInt(self, line):
+        return re.search(r'^\s*(\d+)(?!\.)', line)
 
+    def matchFloat(self, line):
+        return re.search(r'^\s*(\d+\.\d+)', line)
 
-def accept_token():
-    global inToken
-    parse.insert(END, "    accept token from the list:" + inToken[1] + "\n")
-    inToken = parserTok.pop(0)
+    def matchString(self, line):
+        return re.search(r'^\s*(\".*?\")', line)
 
+    def cutOneLine(self, line):
+        pairs = list()
+        while len(line):
+            if match := self.matchKeywords(line):
+                pairs.append(("keyword", match.group(1)))
+                line = line[match.end(0):]
+            elif match := self.matchString(line):
+                pairs.append(("string_literal", match.group(1)))
+                line = line[match.end(0):]
+            elif match := self.matchOperators(line):
+                pairs.append(("operator", match.group(1)))
+                line = line[match.end(0):]
+            elif match := self.matchSeparators(line):
+                pairs.append(("seperator", match.group(1)))
+                line = line[match.end(0):]
+            elif match := self.matchIdentifiers(line):
+                pairs.append(("identifier", match.group(1)))
+                line = line[match.end(0):]
+            elif match := self.matchFloat(line):
+                pairs.append(("float_literal", match.group(1)))
+                line = line[match.end(0):]
+            elif match := self.matchInt(line):
+                pairs.append(("int_literal", match.group(1)))
+                line = line[match.end(0):]
+            else:
+                return "ERROR"
+                break
+        return pairs
 
-def mult():
-    parse.insert(END, "\n----parent node mult, finding children nodes: " + "\n")
-    global inToken
-    if (inToken[0] == "float"):
-        parse.insert(END, "child node (internal): float" + "\n")
-        parse.insert(END, " float has child node (token): " + inToken[1] + "\n")
-        accept_token()
+class Parser:
+    def __init__(self):
+        self.currentNode = 0
+        self.nextNode = 1
+        self.inToken = tuple()
+    
+    def parse(self, tokens):
+        global tree
+        self.output = str()
+        self.tokens = tokens
+        self.inToken = self.tokens.pop(0)
+        if self.inToken[0] == "keyword" and self.tokens[0][0] == "identifier" and self.tokens[1][0] == "operator":
+            self.output += self.exp()
+        elif self.inToken[0] == "keyword" and self.inToken[1] == "if":
+            self.output += self.if_exp()
+        elif self.inToken[1] == "print":
+            self.output += self.print_call()
+        else:
+            return "Error! unable to parse line"
 
-    elif (inToken[0] == "int"):
-        parse.insert(END, "child node (internal): int" + "\n")
-        parse.insert(END, " int has child node (token): " + inToken[1] + "\n")
-        accept_token()
+        if self.inToken[1] not in [";", ":"]:
+            self.output += "Error, statement not closed!\n"
+        return self.output
 
-        if (inToken[1] == "*"):
-            parse.insert(END, "child node (token): " + inToken[1])
-            accept_token()
+    def exp(self):
+        global tree
+        tree.node(str(self.currentNode), "Expression")
+        output = str()
+        output += "----parent node exp, finding children nodes:"
+        typeT,token = self.inToken
+        if typeT=="keyword" and token in ["float", "int"]:
+            output += "child node (internal): keyword/type"
+            output += "\tidentifier has child node (token):"+token
 
-            parse.insert(END, "child node (internal): mulit")
-            mult()
+            tree.node(str(self.nextNode), token)
+            tree.edge(str(self.currentNode), str(self.nextNode))
+            self.nextNode += 1
 
+            self.accept_token()
+        else:
+            print("expect a valid type in expression!\n")
+            return
+        
+        typeT,token = self.inToken
+        if typeT=="identifier":
+            output += "child node (internal): identifier\n"
+            output += "\tidentifier has child node (token):"+token+"\n"
+            
+            tree.node(str(self.nextNode), token)
+            tree.edge(str(self.currentNode), str(self.nextNode))
+            self.nextNode += 1
 
-def math():
-    global inToken
-    parse.insert(END, "\n----parent node math, finding children nodes:" + "\n")
-    # parse.insert(END,"child node (internal): mult"+"\n")
-    mult()
-    if (inToken[1] == "+"):
-        parse.insert(END, "child node (internal): +" + "\n")
-        accept_token()
-    mult()
+            self.accept_token()
+        else:
+            print("expect identifier as the second element of the expression!\n")
+            return
 
+        if(self.inToken[1]=="="):
+            output += "child node (token):"+self.inToken[1]+"\n"
 
-def exp():
-    parse.insert(END, "\n----parent node exp, finding children nodes:" + "\n")
-    global inToken
-    typeT, token = inToken
-    if (inToken[0] == "keyword"):
-        parse.insert(END, "child node (internal): keyword" + "\n")
-        parse.insert(END, " keyword has child node (token):" + inToken[1] + "\n")
-        accept_token()
-    else:
-        parse.insert(END, "expect keyword as the first element of the expression!\n" + "\n")
-        return
+            tree.node(str(self.nextNode), '=')
+            tree.edge(str(self.currentNode), str(self.nextNode))
+            self.nextNode += 1
 
-    if (inToken[0] == "id"):
-        parse.insert(END, "child node (internal): identifier" + "\n")
-        parse.insert(END, " identifier has child node (token):" + inToken[1] + "\n")
-        accept_token()
-    else:
-        parse.insert(END, "expect identifier as the first element of the expression!\n" + "\n")
-        return
+            self.accept_token()
+        else:
+            print("expect = as the second element of the expression!")
+            return
+        
+        tree.edge(str(self.currentNode), str(self.nextNode))
+        self.currentNode = self.nextNode
+        self.nextNode += 1
 
-    if (inToken[1] == "="):
-        parse.insert(END, "child node (token): " + inToken[1] + "\n")
-        accept_token()
-    else:
-        parse.insert(END, "expect = as the third element of the expression!" + "\n")
-        return
+        output += "Child node (internal): math"
+        output += self.math().replace("\n", "\n\t")
+        return output
 
-    parse.insert(END, "child node (internal): math" + "\n")
-    math()
+    def if_exp(self):
+        global tree
+        tree.node(str(self.currentNode), "If Expression")
+        output = str()
+        output += "----parent node if_exp, finding children nodes:\n"
+        if self.inToken[1] == "if":
+            output += "child node (internal): " + self.inToken[0] + "\n"
+            output += "\t"+self.inToken[0]+" has child node (token):"+self.inToken[1]+"\n"
+            self.accept_token()
+        else:
+            print("error, if_exp expects if")
 
+        if self.inToken[1] != "(":
+            print("error, if_exp needs a (")
+        self.accept_token()
 
-def comparison_exp():
-    global inToken
-    if (inToken[0] == "id"):
-        parse.insert(END, "child node (internal): id" + 'n')
-        parse.insert(END, " child node (token):" + inToken[1] + "\n")
-        accept_token()
-        comparison_exp()
-    if (inToken[0] == "op"):
-        parse.insert(END, "child node (internal): op\n")
-        parse.insert(END, " fchild node (token):" + inToken[1] + "\n")
-        accept_token()
-        comparison_exp()
+        tree.edge(str(self.currentNode), str(self.nextNode))
+        self.currentNode = self.nextNode
+        self.nextNode += 1
 
+        output += self.comparison_exp()
+            
+        if self.inToken[1] != ")":
+            print("error, if_exp needs a )")
+        self.accept_token()
 
-def exp2():
-    parse.insert(END, "\nparent node if_exp, finding children nodes:\n")
-    global inToken
-    typeT, token = inToken
-    if (token == "if"):
-        parse.insert(END, "child node (internal): keyword\n")
-        parse.insert(END, " char has child node (token): " + token + "\n")
-        accept_token()
+        return output
 
-    if (token == "("):
-        parse.insert(END, "child node (token): " + inToken[1])
-        accept_token()
+    def comparison_exp(self):
+        global tree
+        tree.node(str(self.currentNode), "Comparison Expression")
+        output = str()
+        output += "----parent node comparison_exp, finding children nodes:\n"
 
-    parse.insert(END, "child node (internal): comparison_exp\n")
-    parse.insert(END, "\n----parent node comparison_exp, finding children nodes:\n")
-    comparison_exp()
+        if self.inToken[0] == "identifier":
+            output += "child node (internal): " + self.inToken[0] + "\n"
+            output += "\t"+self.inToken[0]+" has child node (token):"+self.inToken[1]+"\n"
 
-    parse.insert(END, "\n----parent node if_exp, finding children nodes:\n")
-    if (inToken[1] == ")"):
-        parse.insert(END, "child node (token): " + inToken[1] + "\n")
-        accept_token()
+            tree.node(str(self.nextNode), self.inToken[1])
+            tree.edge(str(self.currentNode), str(self.nextNode))
+            self.nextNode += 1
 
+            self.accept_token()
+        else:
+            print("error, comparison expects identifier")
 
-def if_exp():
-    global inToken
-    if not parserTok:
-        return
-    else:
-        inToken = parserTok.pop(0)
-        exp2()
-    return
+        if self.inToken[1] in [">", "<"]:
+            output += "child node (token):"+self.inToken[1]+"\n"
 
+            tree.node(str(self.nextNode), self.inToken[1])
+            tree.edge(str(self.currentNode), str(self.nextNode))
+            self.nextNode += 1
 
-def parser():
-    global inToken
-    # global parserTok
-    inToken = parserTok.pop(0)
-    typeT, token = inToken
-    if (token == "if"):
-        if_exp()
-        if (inToken[1] == ":"):
-            parse.insert(END, "\nparse tree building sucess!\n")
-    elif (token == "print"):
-        print_exp()
-        parse.insert(END, "\nparse tree building sucess!\n")
-    else:
-        exp()
-        if (inToken[1] == ";"):
-            parse.insert(END, "\nparse tree building success!\n" )
+            self.accept_token()
 
+            output += "child node (internal): comparison_exp\n"
+            output += self.comparison_exp().replace("\n", "\n\t")
 
-def next_line():
-    global num
-    global parserTok
-    # parserTok = []
-    # global parser
-    # Getting the text from the input side
-    # "1.0" means that the input should be read from line one, character zero, second paramter is till end of line
-    #output.delete("0.0", END)
-    #parse.delete("0.0", END)
-    #str = Input.get('1.0', END)
-    str = Input.get("1.0", END).split("\n")
-    stringlex = str[num]
+        return output
 
+    def print_call(self):
+        global tree
+        tree.node(str(self.currentNode), "Print Call")
+        output = str()
+        output += "----parent node print_call, finding children nodes:\n"
+        if self.inToken[1] != "print":
+            return "ERROR! Print call must start with print"
+        self.accept_token()
 
-    if num == len(str) - 1:
-        exit()
-    # cleaning the current line text box
-    keyword = re.compile("if|else|int|float")
-    operator = re.compile("=|\+|>|\*")
-    separator = re.compile("\(|\)|:|\"|;")
-    identifier = re.compile("[a-zA-Z]+[0-9]*")
-    float = re.compile("^[0-9]+\.[0-9]+")
-    int = re.compile("\d+")
-    string = re.compile("\".+\"")
-    i = 0
-    # global parserTok
-    # Loop until the string is empty
-    ####Parse tree
-    count = i + 1;
-    parse.insert(END, "\n###PARSE TREE for line ")
-    parse.insert(END, num + 1)
-    parse.insert(END, "###\n")
+        if self.inToken[1] != "(":
+            return "ERROR! if_exp needs a ("
+        self.accept_token()
 
-    while stringlex:
+        if self.inToken[0] == "string_literal":
+            output += "child node (internal): " + self.inToken[0] + "\n"
+            output += "\t"+self.inToken[0]+" has child node (token):"+self.inToken[1]+"\n"
 
-        # Check for float
-        Float = float.match(stringlex)
-        if Float:
-            token = stringlex[Float.start():Float.end()]
-            output.insert(END, ("<float_literal," + token + ">\n\n"))
-            parserTok.append(tuple(("float", token)))
-            stringlex = stringlex[len(token):].strip()
-            continue
-        # Check for keywords
-        Keyword = keyword.match(stringlex)
-        if Keyword:
-            token = stringlex[Keyword.start():Keyword.end()]
-            output.insert(END, ("<keyword," + token + ">\n\n"))
-            parserTok.append(tuple(("keyword", token)))
-            # cut substring to find next token
-            stringlex = stringlex[len(token):].strip()
-            continue
-        # Check for operators
-        Operator = operator.match(stringlex)
-        if Operator:
-            token = stringlex[Operator.start():Operator.end()]
-            output.insert(END, ("<operator," + token + ">\n\n"))
-            parserTok.append(tuple(("op", token)))
-            stringlex = stringlex[len(token):].strip()
-            continue
-        # Check for separators
-        Separator = separator.match(stringlex)
-        if Separator:
-            token = stringlex[Separator.start():Separator.end()]
-            output.insert(END, ("<seperator," + token + ">\n\n"))
-            parserTok.append(tuple(("sep", token)))
-            stringlex = stringlex[len(token):].strip()
-            continue
-        # Check for identifiers
-        Identifier = identifier.match(stringlex)
-        if Identifier:
-            token = stringlex[Identifier.start():Identifier.end()]
-            output.insert(END, ("<identifier," + token + ">\n\n"))
-            parserTok.append(tuple(("id", token)))
-            stringlex = stringlex[len(token):].strip()
-            continue
-        # Check for int
-        Int = int.match(stringlex)
-        if Int:
-            token = stringlex[Int.start():Int.end()]
-            output.insert(END, ("<int_literal," + token + ">\n\n"))
-            parserTok.append(tuple(("int", token)))
-            stringlex = stringlex[len(token):].strip()
-            continue
-        # Check for string
-        String = string.match(stringlex)
-        if String:
-            token = stringlex[String.start():String.end()]
-            output.insert(END, ("<string_literal," + token + ">\n\n"))
-            parserTok.append(tuple(("str", token)))
-            stringlex = stringlex[len(token):].strip()
+            tree.node(str(self.nextNode), self.inToken[1])
+            tree.edge(str(self.currentNode), str(self.nextNode))
+            self.nextNode += 1
 
-        #stringlex += 1
+            self.accept_token()
+        else:
+            return "error, print expects string literal"
 
+        if self.inToken[1] != ")":
+            return "error, if_exp needs a )"
+        self.accept_token()
 
-    processing_line.delete(0, END)
+        return output
 
-    # inserting the next line output side
-    processing_line.insert(END, num + 1)
-    num += 1
-    parser()
+    def math(self):
+        global tree
+        tree.node(str(self.currentNode), "Math Expression")
+        output = str()
+        output += "----parent node math, finding children nodes:\n"
 
+        if self.inToken[0] in ["int_literal", "float_literal"]:
+            output += "child node (internal): " + self.inToken[0] + "\n"
+            output += "\t"+self.inToken[0]+" has child node (token):"+self.inToken[1]+"\n"
 
-# closes program
-def Exit():
-    root.quit()
+            tree.node(str(self.nextNode), self.inToken[1])
+            tree.edge(str(self.currentNode), str(self.nextNode))
+            self.nextNode += 1
 
+            self.accept_token()
+        else:
+            print("error, math expects float or int")
 
-# size of page
-title = root.title("My Title")
-root.title("Lexical Analyzer for TinyPie")
-size = Canvas(root, height=800, width=1650)
-size.pack()
+        if self.inToken[1] in ["+", "*"]:
+            output += "child node (token):"+self.inToken[1]+"\n"
 
-# source code input box
-label_1 = Label(root, text='Source Code Input:')
-label_1.place(x=50, y=50)
-leftbox = LabelFrame(root, height=400, width=400, bg="yellow")
-leftbox.place(relx=0.1, rely=0.1, x=-50)
-Input = Text(leftbox)
-Input.place(relwidth=1, relheight=1)
+            tree.node(str(self.nextNode), self.inToken[1])
+            tree.edge(str(self.currentNode), str(self.nextNode))
+            self.nextNode += 1
 
-# current processing line box
-label_2 = Label(root, text='Current Processing Line:')
-label_2.place(x=40, y=500)
-processing_line = Entry(root)
-# processing_line.size()
-processing_line.place(x=200, y=500)
-ip_next_button = Button(root, text='NextLine', bg="light blue", command=next_line)
-ip_next_button.place(x=200, y=530)
+            self.accept_token()
 
-# Lexical Analyzed result box
-rightbox = LabelFrame(root, height=400, width=400, bg="yellow")
-rightbox.place(relx=0.1, rely=0.1, x=400, y=200, anchor='w')
-output = Text(rightbox)
-output.place(relwidth=1, relheight=1)
-Label_3 = Label(root, text='Lexical Analysed Result:')
-Label_3.place(x=500, y=50)
+            output += "child node (internal): math\n"
+            output += self.math().replace("\n", "\n\t")
 
-# parser box
-Label_4 = Label(root, text='PARSER:')
-Label_4.place(x=1000, y=50)
-parserbox = LabelFrame(root, height=400, width=480, bg="yellow")
-parserbox.place(relx=0.1, rely=0.1, x=850, y=200, anchor='w')
-parse = Text(parserbox)
-parse.place(relwidth=1, relheight=1)
+        return output
 
-# exit
-next_button = Button(root, text='Quit', bg="light blue", command=Exit)
-next_button.place(x=1100, y=520)
+    def accept_token(self):
+        #print("     accept token from the list:"+self.inToken[1])
+        try:
+            self.inToken=self.tokens.pop(0)
+        except IndexError:
+            self.output += "Error! Unexpected end of line"
 
-root.mainloop()
+class LexerGUI:
+    def __init__(self, root):
+        self.root = root
+        self.lexer = Lexer()
+        self.parser = Parser()
+        self.tokenList = list()
+        self.root.title("LexerGUI")
+        self.master = ttk.Frame(root, padding="3 3 12 12")
+        self.master.grid(column=0, row=0, sticky=(N, W, E, S))
+        self.root.columnconfigure(0, weight=1)
+        self.root.rowconfigure(0, weight=1)
+        self.currentline = 0
+
+        self.textframe = ttk.Frame(self.master, padding="3 3 3 3")
+        self.textframe.grid(column=0, row=0, sticky=N)
+
+        self.inputboxlabel = Label(self.textframe, text="Source Code Input:", padx=2, pady=2)
+        self.inputboxlabel.grid(column=0, row=0, sticky=W)
+        
+        self.lexerroutputlabel = Label(self.textframe, text="Lexical Analyzed Result:", padx=2, pady=2)
+        self.lexerroutputlabel.grid(column=1, row=0, sticky=W)
+
+        self.parseroutputlabel = Label(self.textframe, text="Parse Tree:", padx=2, pady=2)
+        self.parseroutputlabel.grid(column=2, row=0, sticky=W)
+
+        self.inputbox = Text(self.textframe, height=20, width=60, wrap="none", padx=5, pady=5)
+        self.inputbox.grid(column=0, row=1, sticky=E)
+
+        self.lexeroutput = Text(self.textframe, height=20, width=20, wrap="none", padx=5, pady=5)
+        self.lexeroutput.grid(column=1, row=1, sticky=E)
+
+        self.parseroutput = Text(self.textframe, height=20, width=60, wrap="none", padx=5, pady=5)
+        self.parseroutput.grid(column=2, row=1, sticky=E)
+
+        self.treeoutput = Canvas(self.master, height=350, width=1000)
+        self.treeoutput.grid(column=0, row=1, sticky=N)
+
+        self.linelabel = Label(self.master, text="Current Line: 0", padx=2, pady=2)
+        self.linelabel.grid(column=0, row=3, sticky=W)
+
+        self.advancebutton = Button(self.master, command=self.advance, text="Next Line", padx=1, pady=1)
+        self.advancebutton.grid(column=0, row=4, sticky=E)
+
+        self.quitbutton = Button(self.master, command=self.root.destroy, text="Quit", padx=1, pady=1)
+        self.quitbutton.grid(column=2, row=4, sticky=E)
+
+        self.resetbutton = Button(self.master, command=self.reset, text="Reset", padx=1, pady=1)
+        self.resetbutton.grid(column=2, row=4, sticky=E)
+
+    def formatTuple(self, tuple):
+        return "<" + tuple[0] + ", " + tuple[1] + ">"
+
+    def advance(self):
+        global tree
+        self.currentline += 1
+        tree = graphviz.Digraph('Expression')
+        #tree.node("0", "Parse Tree")
+        input = self.inputbox.get(str(self.currentline) + ".0", str(self.currentline)+".end")
+        lexedLine = self.lexer.cutOneLine(input)
+        self.tokenList += lexedLine # full token list
+        self.lexeroutput.insert(END, "\n".join(map(self.formatTuple, lexedLine))+"\n")
+
+        parsedLine = self.parser.parse(lexedLine) # process one line of tokens
+        
+        self.parseroutput.insert(END, "###PARSE TREE FOR LINE "+str(self.currentline)+"###\n")
+        self.parseroutput.insert(END, parsedLine+"\n")
+
+        self.linelabel.config(text="Current Line: " + str(self.currentline))
+
+        self.currentimage = PhotoImage(data=tree.pipe(format='png'))
+
+        self.treeoutput.create_image(500,0, image=self.currentimage, anchor=N)
+
+    def reset(self):
+        self.currentline = 0
+        self.linelabel.config(text="Current Line: " + str(self.currentline))
+        self.lexeroutput.delete("1.0", END)
+        self.parseroutput.delete("1.0", END)
+
+if __name__ == '__main__':   
+    root = Tk()
+    if distutils.spawn.find_executable('dot.exe') == None:
+        tkinter.messagebox.showerror(parent=root, title="error", message="You must install Graphviz and add it to your PATH")
+    lexergui = LexerGUI(root)
+    root.mainloop()
