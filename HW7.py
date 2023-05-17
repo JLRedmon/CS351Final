@@ -2,10 +2,9 @@ from tkinter import *
 import re
 from treelib import Node, Tree
 import sys
-tree = Tree()
 root = Tk()
 num = 0
-
+tree = Tree()
 
 parserTok = []
 inToken = ("empty", "empty")
@@ -24,7 +23,7 @@ def print_exp():
     if (token == "print"):
         parse.insert(END, "\nchild node (internal): keyword")
         parse.insert(END, " keyword has child node (token):" + inToken[1] + "\n")
-        accept_token()                                                                                          
+        accept_token()
     if (inToken[0] == "sep"):
         parse.insert(END, "child node (internal): separator")
         parse.insert(END, " separator has child node (token):" + inToken[1] + "\n")
@@ -33,7 +32,6 @@ def print_exp():
     if (inToken[0] == 'id'):
         parse.insert(END, "child node (internal): identifier")
         parse.insert(END, " identifier has child node (token):" + inToken[1] + "\n")
-        tree.create_node("Identifier","identifier", parent = "expression")
         accept_token()
         print_exp()
 
@@ -55,12 +53,10 @@ def mult():
     elif (inToken[0] == "int"):
         parse.insert(END, "child node (internal): int" + "\n")
         parse.insert(END, " int has child node (token): " + inToken[1] + "\n")
-        tree.add_node("Integer", "integer", parent="Math")
         accept_token()
 
         if (inToken[1] == "*"):
             parse.insert(END, "child node (token): " + inToken[1])
-            tree.add_node("*","*", parent="Math")
             accept_token()
 
             parse.insert(END, "child node (internal): mulit")
@@ -70,11 +66,10 @@ def mult():
 def math():
     global inToken
     parse.insert(END, "\n----parent node math, finding children nodes:" + "\n")
-    #parse.insert(END,"child node (internal): mult"+"\n")
+    # parse.insert(END,"child node (internal): mult"+"\n")
     mult()
     if (inToken[1] == "+"):
         parse.insert(END, "child node (internal): +" + "\n")
-        #tree.add_node("Math","math",parent="expression")
         tree.add_node("+", "+", parent="operator")
         accept_token()
     mult()
@@ -104,13 +99,14 @@ def exp():
 
     if (inToken[1] == "="):
         parse.insert(END, "child node (token): " + inToken[1] + "\n")
-        tree.create_node("=", parent= "expression")
+        tree.create_node("=", "equals", parent="expression")
         accept_token()
     else:
         parse.insert(END, "expect = as the third element of the expression!" + "\n")
         return
 
     parse.insert(END, "child node (internal): math" + "\n")
+
     math()
 
 
@@ -176,7 +172,6 @@ def parser():
     else:
         exp()
         if (inToken[1] == ";"):
-            print("Parse tree finished for tree visual!!")
             parse.insert(END, "\nparse tree building success!\n" )
 
 
@@ -275,9 +270,6 @@ def next_line():
         #stringlex += 1
 
 
-    processing_line.delete(0, END)
-
-    # inserting the next line output side
     processing_line.insert(END, num + 1)
     num += 1
     tree.create_node("Expression","expression") #This is the root node
@@ -286,7 +278,6 @@ def next_line():
     encoded_tree = tree.to_json(with_data=True).encode('utf-8')
     decoded_tree = encoded_tree.decode('utf-8')
     tree.show()
-
 
 
 # closes program
